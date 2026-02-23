@@ -1,33 +1,42 @@
 workflows:
   android-release-workflow:
-    name: Shofyou Release Build
+    name: Shofyou Release Signed Build
     max_build_duration: 60
     instance_type: mac_mini_m1
     environment:
       groups:
-        - keystore_credentials # سنعرف هذه المجموعة في واجهة كود ماجيك
+        - keystore_credentials 
       vars:
         PACKAGE_NAME: "com.shofyou.app"
       java: 17
     scripts:
-      - name: Generate Keystore if not exists
+      - name: Generate Keystore
         script: |
-          # هذا السطر ينشئ مفتاح توقيع جديد إذا لم ترفع واحدًا
-          if [ ! -f "keystore.jks" ]; then
-            keytool -genkey -v -keystore keystore.jks \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -alias shofyou_alias -storepass $CM_KEYSTORE_PASSWORD \
-              -keypass $CM_KEY_PASSWORD -dname "CN=Shofyou, OU=Dev, O=Shofyou, L=City, S=State, C=US"
-          fi
-      - name: Build Android Release (APK & AAB)
+          # إنشاء مفتاح جديد إذا لم يكن موجوداً
+          keytool -genkey -v -keystore keystore.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias shofyou_alias -storepass $CM_KEYSTORE_PASSWORD \
+            -keypass $CM_KEY_PASSWORD -dname "CN=Shofyou, OU=Dev, O=Shofyou, L=City, S=State, C=US"
+      - name: Build and Sign APK
         script: |
           chmod +x gradlew
-          # بناء نسخة الـ APK ونسخة المتجر AAB
-          ./gradlew assembleRelease bundleRelease
+          # بناء النسخة الموقعة مباشرة
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
+            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=shofyou_alias \
+            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+      - name: Build AAB for Play Store
+        script: |
+          ./gradlew bundleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
+            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=shofyou_alias \
+            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
     artifacts:
       - app/build/outputs/apk/release/*.apk
       - app/build/outputs/bundle/release/*.aab
-      - keystore.jks # سيظهر لك الملف هنا لتحميله وحفظه للأبد
+      - keystore.jks
     publishing:
       email:
         recipients:
